@@ -1,0 +1,13 @@
+# Secrets — config.json holds API keys / Upstash token. Keep only the example.
+config.json
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Rust (binary crate — Cargo.lock IS committed)
+/target
+
+# Local state (snapshots, logs) live in ~/.ram-optimizer, not here, but ignore stray copies
+*.log
+.ram-optimizer/

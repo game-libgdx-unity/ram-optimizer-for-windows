@@ -1,0 +1,22 @@
+#!/bin/sh
+# Pre-commit hook: keep the tree rustfmt-clean so CI's
+# `cargo fmt --all -- --check` gate can never fail on a pushed commit.
+# It runs the SAME check CI does and blocks the commit if anything is unformatted.
+#
+# Enable once per clone:   git config core.hooksPath .githooks
+# Bypass for one commit:   git commit --no-verify
+#
+# Skips silently if no Rust toolchain is installed (e.g. docs-only environments).
+
+if ! command -v cargo >/dev/null 2>&1; then
+    exit 0
+fi
+
+if ! cargo fmt --all -- --check; then
+    echo
+    echo "✖ Rust formatting check failed (the diff above shows what rustfmt wants)."
+    echo "  Fix it with:   cargo fmt --all"
+    echo "  then re-stage your changes and commit again."
+    echo "  (To bypass once: git commit --no-verify)"
+    exit 1
+fi

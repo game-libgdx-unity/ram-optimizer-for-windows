@@ -1,0 +1,87 @@
+{
+  "thresholds": {
+    "highRamMB": 1500,
+    "singleProcRamPct": 25,
+    "highCpuPct": 80,
+    "cpuRisePct": 40,
+    "dupCount": 10,
+    "orphanCount": 5,
+    "memRiseMB": 400,
+    "systemRamPctAlert": 85,
+    "ignoreNames": [
+      "svchost.exe", "explorer.exe", "dwm.exe", "conhost.exe", "MsMpEng.exe",
+      "chrome.exe", "msedge.exe", "firefox", "Google Chrome",
+      "WindowServer", "kernel_task",
+      "System Idle Process", "System", "Memory Compression", "Registry", "Idle"
+    ]
+  },
+
+  "rules": [
+    {
+      "name": "alert-heavy-app",
+      "match": { "name": "SomeApp.exe" },
+      "whenProcRamMB": 2000,
+      "action": "alert"
+    },
+    {
+      "name": "alert-app-by-path",
+      "match": { "pathContains": "MyApp" },
+      "whenProcRamMB": 1500,
+      "whenSystemRamPct": 90,
+      "action": "alert"
+    },
+    {
+      "name": "kill-runaway-helper-example",
+      "match": { "cmdContains": "my-worker.js" },
+      "whenProcRamMB": 1500,
+      "whenSystemRamPct": 95,
+      "action": "kill",
+      "spareNewest": true
+    },
+    {
+      "name": "restart-bloated-app-example",
+      "match": { "name": "BloatyApp.exe" },
+      "whenProcRamMB": 2500,
+      "whenSystemRamPct": 95,
+      "action": "restart",
+      "restartCommand": ["C:\\Path\\To\\BloatyApp.exe"]
+    }
+  ],
+
+  "optimize": {
+    "enabled": true,
+    "autoReapSystemRamPct": 0,
+    "autoReapCount": 10,
+    "autoReapCountAggressive": 5,
+    "noReapNames": ["chrome.exe", "msedge.exe", "msedgewebview2.exe"],
+    "blockNames": [],
+    "autoActSystemRamPct": 0,
+    "autoActMaxKills": 1,
+    "autoActConfirmPasses": 2,
+    "restartAfterKill": [],
+    "guardClaude": true,
+    "claudeMarkers": ["claude"],
+    "pauseAntimalwareWhenIdle": false,
+    "antimalwareHotRamMB": 0,
+    "antimalwarePauseSystemRamPct": 0
+  },
+
+  "ai": {
+    "enabled": false,
+    "provider": "openai",
+    "fallback": [],
+    "minMinutesBetweenEscalations": 60,
+    "groqApiKey": "",
+    "groqModel": "llama-3.3-70b-versatile",
+    "openaiApiKey": "",
+    "openaiModel": "gpt-4o-mini"
+  },
+
+  "alerts": { "toast": true, "log": true, "cooldownMinutes": 30, "onlyUnderRamPressure": false },
+
+  "vectordb": { "enabled": false, "provider": "upstash", "url": "", "token": "", "topK": 3 },
+
+  "ui": { "enabled": true, "bind": "127.0.0.1", "port": 8787, "startHidden": false },
+
+  "schedule": { "intervalMinutes": 5, "taskName": "RamOptimizer", "keepRuns": 500 }
+}

@@ -1,0 +1,36 @@
+[package]
+name = "ram-optimizer"
+version = "1.0.0"
+edition = "2021"
+description = "RAM Optimizer for Windows — a lightweight, no-daemon RAM/CPU optimizer with config-driven cleanup rules, live antivirus taming, optional AI escalation, and a native dashboard. Windows-first; also runs on macOS/Linux."
+license = "MIT"
+repository = "https://github.com/game-libgdx-unity/ram-optimizer-for-windows"
+readme = "README.md"
+
+[[bin]]
+name = "ram-optimizer"
+path = "src/main.rs"
+
+[dependencies]
+sysinfo = "0.30"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# rustls so the HTTPS client (AI/vector DB) builds on Windows/macOS/Linux with no
+# system OpenSSL dependency.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+dirs = "5"
+# Native GUI (pure-Rust, no browser/webview engine — opened on demand, not a daemon).
+eframe = "0.27"
+# Decode the XOR-obfuscated built-in vector-DB default (see src/vectordb.rs).
+base64 = "0.22"
+
+# System-tray icon. Excluded on Linux so the CI/Linux build needs no GTK; the
+# app there simply runs without a tray (see src/tray.rs).
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+tray-icon = "0.14"
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
+codegen-units = 1

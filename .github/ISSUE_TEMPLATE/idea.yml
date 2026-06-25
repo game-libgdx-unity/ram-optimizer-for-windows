@@ -1,0 +1,33 @@
+name: 💡 Idea / enhancement
+description: A new detector, integration, or UX improvement — rough ideas welcome.
+labels: ["idea", "enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Early, half-formed ideas are exactly what this is for. Tell us the problem
+        you're trying to solve — we'll figure out the shape together.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      placeholder: e.g. "Old MCP server helpers leak after a session ends and pile up."
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: How might RAM Optimizer help? A detector? A UI affordance? A new option?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or prior art (optional)
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Want to help build it?
+      options:
+        - label: I'd be up for opening a PR for this.

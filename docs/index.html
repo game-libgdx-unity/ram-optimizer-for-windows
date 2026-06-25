@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAM Optimizer for Windows — lightweight RAM optimizer for heavy Claude users</title>
+<meta name="description" content="A lightweight RAM optimizer for heavy Claude Code / Claude Desktop users on 8–16 GB machines. Detects duplicate, orphan, and leaking processes for any app; confirm-to-act cleanups; native dashboard; no daemon.">
+<style>
+  :root{
+    --bg:#0e1116; --panel:#171c24; --panel2:#1e2530; --line:#2a323d;
+    --fg:#e6edf3; --mut:#9aa7b4; --accent:#4aa3ff; --ok:#3fb950; --warn:#d29922;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:16px/1.6 system-ui,Segoe UI,Roboto,sans-serif}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:980px;margin:0 auto;padding:0 20px}
+  header{padding:64px 0 36px;text-align:center;border-bottom:1px solid var(--line)}
+  h1{font-size:44px;margin:0 0 6px;letter-spacing:.5px}
+  h1 .dot{color:var(--accent)}
+  .tag{color:var(--mut);font-size:19px;max-width:720px;margin:0 auto 24px}
+  .cta{display:inline-flex;gap:10px;flex-wrap:wrap;justify-content:center}
+  .btn{background:var(--accent);color:#04121f;font-weight:650;padding:11px 20px;
+    border-radius:9px;display:inline-block}
+  .btn.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
+  section{padding:44px 0;border-bottom:1px solid var(--line)}
+  h2{font-size:24px;margin:0 0 18px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .card h3{margin:0 0 6px;font-size:16px}
+  .card p{margin:0;color:var(--mut);font-size:14.5px}
+  figure{margin:0 0 22px}
+  figure img{width:100%;border:1px solid var(--line);border-radius:12px;display:block}
+  figcaption{color:var(--mut);font-size:13.5px;margin-top:8px;text-align:center}
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:16px;overflow:auto;font:13.5px/1.55 ui-monospace,Consolas,monospace;color:#cfe3ff}
+  .note{background:var(--panel2);border-left:3px solid var(--warn);border-radius:0 8px 8px 0;
+    padding:12px 14px;color:var(--mut);font-size:14px}
+  footer{padding:34px 0 60px;color:var(--mut);text-align:center;font-size:14px}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1><span class="dot">●</span> RAM Optimizer for Windows</h1>
+    <p class="tag">A lightweight RAM optimizer for heavy <strong>Claude Code / Claude Desktop</strong>
+      users on machines with limited RAM (8–16&nbsp;GB). Reaps duplicate, orphan, and leaking
+      processes — for any app — so multiple sessions keep running without thrashing.</p>
+    <div class="cta">
+      <a class="btn" href="https://github.com/game-libgdx-unity/ram-optimizer-for-windows">View on GitHub</a>
+      <a class="btn ghost" href="https://github.com/game-libgdx-unity/ram-optimizer-for-windows#install">Install</a>
+      <a class="btn ghost" href="https://github.com/game-libgdx-unity/ram-optimizer-for-windows/blob/main/CONTRIBUTING.md">Contribute</a>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <figure>
+      <img src="screenshots/overview.png" alt="RAM Optimizer dashboard — Overview">
+      <figcaption>The native dashboard reads logs from previous runs — it never monitors in real time.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>What it does</h2>
+    <div class="grid">
+      <div class="card"><h3>Built for limited RAM</h3><p>Watches system-RAM pressure and reclaims what's safe so a few Claude sessions don't tip you into swapping.</p></div>
+      <div class="card"><h3>Catches the pileups</h3><p>Detects duplicate and <em>orphaned</em> helpers (dead parent) and memory leaks — generic across every process, not just Claude.</p></div>
+      <div class="card"><h3>Confirm-to-act</h3><p>Heuristic and AI-suggested kills are proposals you approve. Only the rules you write run automatically.</p></div>
+      <div class="card"><h3>No daemon</h3><p>A one-shot the OS scheduler runs every few minutes (~0.3&nbsp;s), then exits. The viewer is opened on demand.</p></div>
+      <div class="card"><h3>Schedule is independent</h3><p>Closing the app or quitting from the tray never stops the background optimizer — only the Stop button does.</p></div>
+      <div class="card"><h3>Metrics &amp; AI memory</h3><p>Per-run RAM/CPU/duration and effectiveness; optional AI diagnosis with Upstash Vector strategy memory (off by default).</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Screens</h2>
+    <figure><img src="screenshots/pending.png" alt="Pending confirm-to-act queue"><figcaption>Pending — approve or dismiss each proposed cleanup.</figcaption></figure>
+    <figure><img src="screenshots/metrics.png" alt="Per-run metrics"><figcaption>Metrics — how much RAM each run reclaimed, and how cheap it was to run.</figcaption></figure>
+    <figure><img src="screenshots/actionlog.png" alt="Action log with AI prompt and strategies"><figcaption>Action log — methods used, the AI prompt sent, and strategies written to the vector DB.</figcaption></figure>
+    <figure><img src="screenshots/schedule.png" alt="Schedule controls"><figcaption>Schedule — start/stop and retime the background optimizer from the app.</figcaption></figure>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Install</h2>
+<pre>git clone https://github.com/game-libgdx-unity/ram-optimizer-for-windows
+cd ram-optimizer-for-windows
+cargo install --path .
+cp config.example.json config.json
+ram-optimizer ui            # open the dashboard</pre>
+    <p class="note">Windows: a self-built binary is unsigned, so <strong>Smart App Control</strong> /
+      SmartScreen may block it — see the README's Troubleshooting section for how to handle SAC.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    Created by <a href="https://github.com/game-libgdx-unity">@game-libgdx-unity</a> ·
+    <a href="https://github.com/game-libgdx-unity/ram-optimizer-for-windows">ram-optimizer-for-windows</a> · MIT License
+  </div>
+</footer>
+</body>
+</html>
