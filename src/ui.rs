@@ -64,6 +64,7 @@ struct Form {
     rules_json: String,
     alerts_toast: bool,
     ui_start_hidden: bool,
+    pause_antimalware_when_idle: bool,
 }
 
 pub struct RamOptimizerApp {
@@ -342,6 +343,7 @@ impl RamOptimizerApp {
             rules_json: serde_json::to_string_pretty(&c.rules).unwrap_or_else(|_| "[]".into()),
             alerts_toast: c.alerts.toast,
             ui_start_hidden: c.ui.start_hidden,
+            pause_antimalware_when_idle: c.optimize.pause_antimalware_when_idle,
         };
     }
 
@@ -500,6 +502,7 @@ impl RamOptimizerApp {
                 "enabled": self.form.optimize_enabled,
                 "autoActSystemRamPct": self.form.auto_act_pct,
                 "autoActConfirmPasses": self.form.auto_act_confirm_passes,
+                "pauseAntimalwareWhenIdle": self.form.pause_antimalware_when_idle,
             },
             "ai": { "enabled": self.form.ai_enabled, "provider": self.form.ai_provider },
             "vectordb": { "enabled": self.form.vdb_enabled, "url": self.form.vdb_url.trim() },
@@ -1307,6 +1310,18 @@ impl RamOptimizerApp {
                     ui.add(egui::DragValue::new(&mut self.form.dup_count));
                     ui.end_row();
                 });
+                ui.checkbox(
+                    &mut self.form.pause_antimalware_when_idle,
+                    "Pause Windows Defender when idle (reclaim RAM under memory pressure — off by default, weakens antivirus protection)",
+                );
+                ui.label(
+                    egui::RichText::new(
+                        "Only acts when RAM is under pressure AND Defender confirms no active threats. \
+                         Requires the background task to run elevated — see the Schedule tab.",
+                    )
+                    .weak()
+                    .small(),
+                );
                 ui.label(egui::RichText::new("Ignore names (one per line)").weak().small());
                 ui.add(egui::TextEdit::multiline(&mut self.form.ignore_names).desired_rows(4).desired_width(f32::INFINITY));
             });
@@ -1474,15 +1489,70 @@ impl RamOptimizerApp {
                 self.start_sched(ctx, false, None, "Stopping schedule…");
             }
         });
-        ui.add_space(8.0);
-        ui.label(
-            egui::RichText::new(
-                "Tip: on Windows this uses Task Scheduler (no admin needed for a per-user task). \
-                 For a fully hidden/elevated install, run scripts/install-windows.ps1 once.",
-            )
-            .weak()
-            .small(),
-        );
+        ui.add_space(12.0);
+        ui.group(|ui| {
+            ui.label(egui::RichText::new("ELEVATED INSTALL (OPTIONAL)").strong().small());
+            ui.label(
+                egui::RichText::new(
+                    "By default the background task runs as your regular user — no admin needed. \
+                     Some features (e.g. pausing Windows Defender) require the task to run elevated. \
+                     Run the command below once in PowerShell to re-register it with highest privileges:",
+                )
+                .weak()
+                .small(),
+            );
+            ui.add_space(4.0);
+
+            // Resolve the scripts directory relative to the running exe.
+            let scripts_dir = std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
+            let scripts_path = scripts_dir.join("scripts").join("install-windows.ps1");
+            let cmd = format!(
+                "powershell -ExecutionPolicy Bypass -File \"{}\" -Elevated",
+                scripts_path.display()
+            );
+
+            // Monospace code display.
+            ui.add(
+                egui::TextEdit::singleline(&mut cmd.clone())
+                    .code_editor()
+                    .desired_width(f32::INFINITY)
+                    .interactive(false),
+            );
+
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                if ui.button("📋 Copy command").clicked() {
+                    ui.output_mut(|o| o.copied_text = cmd.clone());
+                }
+
+                #[cfg(windows)]
+                if ui.button("⬛ Open PowerShell here").clicked() {
+                    let dir = scripts_dir.clone();
+                    let _ = std::process::Command::new("powershell")
+                        .args([
+                            "-NoExit",
+                            "-Command",
+                            &format!(
+                                "Set-Location \"{}\"; Set-Clipboard -Value '{}'; Write-Host \
+                                 'Command copied to clipboard — paste it here and press Enter to run.' \
+                                 -ForegroundColor Cyan",
+                                dir.display(),
+                                cmd
+                            ),
+                        ])
+                        .spawn();
+                }
+
+                ui.label(
+                    egui::RichText::new("Opens a terminal at the right folder and pre-copies the command for you.")
+                        .weak()
+                        .small(),
+                );
+            });
+        });
     }
 
     fn ai_window(&mut self, ctx: &egui::Context) {
