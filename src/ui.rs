@@ -306,11 +306,10 @@ impl RamOptimizerApp {
     /// Re-read the log files (cheap; no process scan). Does NOT touch the
     /// Settings form, so editing is never clobbered.
     fn reload(&mut self) {
-        let keep = self.cfg.schedule.keep_runs.min(500);
-        self.runs = runlog::recent(keep);
+        self.runs = runlog::recent(runlog::DISPLAY_RUNS);
         self.pending = actions::load();
         self.snapshot = state::load_prev();
-        self.log = read_log_tail(200);
+        self.log = read_log_tail(runlog::DISPLAY_RUNS);
         self.sched = scheduler::status(&self.cfg);
         self.summary = runlog::summary(&self.cfg);
         self.vdb_enabled = vectordb::enabled(&self.cfg);

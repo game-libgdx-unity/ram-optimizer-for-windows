@@ -72,24 +72,33 @@ fn runs_path() -> PathBuf {
     state_dir().join("runs.jsonl")
 }
 
-/// Append one record, then trim the file to the most recent `keep` lines so it
-/// never grows without bound.
+/// Maximum runs shown in the UI action-log and returned by [`recent`] for display.
+pub const DISPLAY_RUNS: usize = 20;
+
+/// Append one record using O(1) append I/O; rewrite to trim only when the file
+/// has grown more than 10 lines past `keep`, amortising the rewrite cost.
 pub fn append(rec: &RunRecord, keep: usize) {
+    use std::io::Write as _;
     let path = runs_path();
     let line = match serde_json::to_string(rec) {
         Ok(s) => s,
         Err(_) => return,
     };
-    let mut lines: Vec<String> = std::fs::read_to_string(&path)
-        .map(|s| s.lines().map(|l| l.to_string()).collect())
-        .unwrap_or_default();
-    lines.push(line);
-    let keep = keep.max(1);
-    if lines.len() > keep {
-        let start = lines.len() - keep;
-        lines = lines[start..].to_vec();
+    // Fast path: just append the new line.
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(f, "{}", line);
     }
-    let _ = std::fs::write(&path, lines.join("\n") + "\n");
+    // Slow path: only trim when clearly over the limit (amortises rewrite cost).
+    let keep = keep.max(1);
+    let content = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.len() > keep + 10 {
+        let start = lines.len() - keep;
+        let _ = std::fs::write(&path, lines[start..].join("\n") + "\n");
+    }
 }
 
 /// The most recent `n` records, oldest-first.
