@@ -1503,20 +1503,51 @@ impl RamOptimizerApp {
             );
             ui.add_space(4.0);
 
-            // Resolve the scripts directory relative to the running exe.
-            let scripts_dir = std::env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-                .unwrap_or_else(|| std::path::PathBuf::from("."));
-            let scripts_path = scripts_dir.join("scripts").join("install-windows.ps1");
-            let cmd = format!(
+            // Walk up from the running exe until we find the project root
+            // (a directory containing both scripts/ and Cargo.toml).
+            let project_root: std::path::PathBuf = {
+                let mut dir = std::env::current_exe()
+                    .ok()
+                    .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+                    .unwrap_or_else(|| std::path::PathBuf::from("."));
+                loop {
+                    if dir.join("Cargo.toml").exists() && dir.join("scripts").exists() {
+                        break dir;
+                    }
+                    match dir.parent() {
+                        Some(p) => dir = p.to_path_buf(),
+                        None => break std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                    }
+                }
+            };
+
+            let release_exe = project_root.join("target").join("release").join("ram-optimizer.exe");
+            let release_exists = release_exe.exists();
+            let scripts_ps1 = project_root.join("scripts").join("install-windows.ps1");
+            let install_cmd = format!(
                 "powershell -ExecutionPolicy Bypass -File \"{}\" -Elevated",
-                scripts_path.display()
+                scripts_ps1.display()
             );
+            // If the release binary isn't built yet, prepend cargo build --release.
+            let full_cmd = if release_exists {
+                install_cmd.clone()
+            } else {
+                format!("cargo build --release; {install_cmd}")
+            };
+
+            if !release_exists {
+                ui.label(
+                    egui::RichText::new(
+                        "Release binary not found — the command below will build it first (takes ~1–2 min).",
+                    )
+                    .color(egui::Color32::from_rgb(210, 153, 34))
+                    .small(),
+                );
+            }
 
             // Monospace code display.
             ui.add(
-                egui::TextEdit::singleline(&mut cmd.clone())
+                egui::TextEdit::singleline(&mut full_cmd.clone())
                     .code_editor()
                     .desired_width(f32::INFINITY)
                     .interactive(false),
@@ -1525,31 +1556,37 @@ impl RamOptimizerApp {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
                 if ui.button("📋 Copy command").clicked() {
-                    ui.output_mut(|o| o.copied_text = cmd.clone());
+                    ui.output_mut(|o| o.copied_text = full_cmd.clone());
                 }
 
                 #[cfg(windows)]
                 if ui.button("⬛ Open PowerShell here").clicked() {
-                    let dir = scripts_dir.clone();
+                    let root = project_root.clone();
+                    let cmd_for_ps = full_cmd.clone();
                     let _ = std::process::Command::new("powershell")
                         .args([
                             "-NoExit",
                             "-Command",
                             &format!(
-                                "Set-Location \"{}\"; Set-Clipboard -Value '{}'; Write-Host \
-                                 'Command copied to clipboard — paste it here and press Enter to run.' \
-                                 -ForegroundColor Cyan",
-                                dir.display(),
-                                cmd
+                                "Set-Location \"{}\"; \
+                                 Set-Clipboard -Value '{}'; \
+                                 Write-Host 'Paste the command (Ctrl+V) and press Enter to run.' \
+                                 -ForegroundColor Cyan; \
+                                 Write-Host '  {}' -ForegroundColor Yellow",
+                                root.display(),
+                                cmd_for_ps,
+                                cmd_for_ps,
                             ),
                         ])
                         .spawn();
                 }
 
                 ui.label(
-                    egui::RichText::new("Opens a terminal at the right folder and pre-copies the command for you.")
-                        .weak()
-                        .small(),
+                    egui::RichText::new(
+                        "Opens a terminal at the project root — command is pre-copied, just paste and run.",
+                    )
+                    .weak()
+                    .small(),
                 );
             });
         });
