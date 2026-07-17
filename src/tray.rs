@@ -13,6 +13,8 @@ pub enum TrayAction {
     Open,
     /// Run one optimization pass now.
     RunNow,
+    /// Toggle the auto-kill pause/resume state.
+    TogglePause,
     /// Exit the app for real.
     Quit,
 }
@@ -30,8 +32,10 @@ mod imp {
 
     pub struct Tray {
         _tray: TrayIcon,
+        pause_item: MenuItem,
         open: MenuId,
         run: MenuId,
+        pause: MenuId,
         quit: MenuId,
     }
 
@@ -41,6 +45,7 @@ mod imp {
     pub struct TrayIds {
         open: MenuId,
         run: MenuId,
+        pause: MenuId,
         quit: MenuId,
     }
 
@@ -63,6 +68,8 @@ mod imp {
             Some(TrayAction::Open)
         } else if ev.id == ids.run {
             Some(TrayAction::RunNow)
+        } else if ev.id == ids.pause {
+            Some(TrayAction::TogglePause)
         } else if ev.id == ids.quit {
             Some(TrayAction::Quit)
         } else {
@@ -94,12 +101,16 @@ mod imp {
 
     impl Tray {
         pub fn new() -> Option<Self> {
+            let paused = crate::state::auto_kill_paused();
+            let pause_label = if paused { "Resume auto-kill" } else { "Pause auto-kill" };
             let menu = Menu::new();
             let open = MenuItem::new("Open RAM Optimizer", true, None);
             let run = MenuItem::new("Run optimization now", true, None);
-            let sep = tray_icon::menu::PredefinedMenuItem::separator();
+            let sep1 = tray_icon::menu::PredefinedMenuItem::separator();
+            let pause_item = MenuItem::new(pause_label, true, None);
+            let sep2 = tray_icon::menu::PredefinedMenuItem::separator();
             let quit = MenuItem::new("Quit", true, None);
-            menu.append_items(&[&open, &run, &sep, &quit]).ok()?;
+            menu.append_items(&[&open, &run, &sep1, &pause_item, &sep2, &quit]).ok()?;
             let tray = TrayIconBuilder::new()
                 .with_tooltip("RAM Optimizer — left-click to open · right-click for menu")
                 .with_menu(Box::new(menu))
@@ -108,10 +119,13 @@ mod imp {
                 .with_icon(icon())
                 .build()
                 .ok()?;
+            let p_id = pause_item.id().clone();
             Some(Tray {
                 _tray: tray,
+                pause_item,
                 open: open.id().clone(),
                 run: run.id().clone(),
+                pause: p_id,
                 quit: quit.id().clone(),
             })
         }
@@ -121,8 +135,14 @@ mod imp {
             TrayIds {
                 open: self.open.clone(),
                 run: self.run.clone(),
+                pause: self.pause.clone(),
                 quit: self.quit.clone(),
             }
+        }
+
+        /// Update the pause/resume menu item text (works across threads via channels).
+        pub fn set_pause_text(&self, paused: bool) {
+            self.pause_item.set_text(if paused { "Resume auto-kill" } else { "Pause auto-kill" });
         }
     }
 }
@@ -143,6 +163,7 @@ mod stub {
         pub fn ids(&self) -> TrayIds {
             TrayIds
         }
+        pub fn set_pause_text(&self, _paused: bool) {}
     }
     pub fn poll_action(_ids: &TrayIds) -> Option<TrayAction> {
         None
