@@ -354,7 +354,7 @@ impl Default for Schedule {
         Schedule {
             interval_minutes: 5,
             task_name: "RamOptimizer".into(),
-            keep_runs: 500,
+            keep_runs: 100,
         }
     }
 }

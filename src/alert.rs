@@ -140,11 +140,22 @@ fn osa_str(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
+const LOG_KEEP_LINES: usize = 20;
+
 fn append_file(path: &Path, content: &str) -> std::io::Result<()> {
     use std::io::Write;
     let mut f = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(path)?;
-    f.write_all(content.as_bytes())
+    f.write_all(content.as_bytes())?;
+    drop(f);
+    // Trim to last LOG_KEEP_LINES lines so the file stays small and cheap to read.
+    let existing = std::fs::read_to_string(path).unwrap_or_default();
+    let lines: Vec<&str> = existing.lines().collect();
+    if lines.len() > LOG_KEEP_LINES + 5 {
+        let start = lines.len() - LOG_KEEP_LINES;
+        std::fs::write(path, lines[start..].join("\n") + "\n")?;
+    }
+    Ok(())
 }

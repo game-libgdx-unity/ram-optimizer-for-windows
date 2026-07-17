@@ -64,6 +64,7 @@ struct Form {
     rules_json: String,
     alerts_toast: bool,
     ui_start_hidden: bool,
+    pause_antimalware_when_idle: bool,
 }
 
 pub struct RamOptimizerApp {
@@ -306,11 +307,10 @@ impl RamOptimizerApp {
     /// Re-read the log files (cheap; no process scan). Does NOT touch the
     /// Settings form, so editing is never clobbered.
     fn reload(&mut self) {
-        let keep = self.cfg.schedule.keep_runs.min(500);
-        self.runs = runlog::recent(keep);
+        self.runs = runlog::recent(runlog::DISPLAY_RUNS);
         self.pending = actions::load();
         self.snapshot = state::load_prev();
-        self.log = read_log_tail(200);
+        self.log = read_log_tail(runlog::DISPLAY_RUNS);
         self.sched = scheduler::status(&self.cfg);
         self.summary = runlog::summary(&self.cfg);
         self.vdb_enabled = vectordb::enabled(&self.cfg);
@@ -343,6 +343,7 @@ impl RamOptimizerApp {
             rules_json: serde_json::to_string_pretty(&c.rules).unwrap_or_else(|_| "[]".into()),
             alerts_toast: c.alerts.toast,
             ui_start_hidden: c.ui.start_hidden,
+            pause_antimalware_when_idle: c.optimize.pause_antimalware_when_idle,
         };
     }
 
@@ -501,6 +502,7 @@ impl RamOptimizerApp {
                 "enabled": self.form.optimize_enabled,
                 "autoActSystemRamPct": self.form.auto_act_pct,
                 "autoActConfirmPasses": self.form.auto_act_confirm_passes,
+                "pauseAntimalwareWhenIdle": self.form.pause_antimalware_when_idle,
             },
             "ai": { "enabled": self.form.ai_enabled, "provider": self.form.ai_provider },
             "vectordb": { "enabled": self.form.vdb_enabled, "url": self.form.vdb_url.trim() },
@@ -1308,6 +1310,18 @@ impl RamOptimizerApp {
                     ui.add(egui::DragValue::new(&mut self.form.dup_count));
                     ui.end_row();
                 });
+                ui.checkbox(
+                    &mut self.form.pause_antimalware_when_idle,
+                    "Pause Windows Defender when idle (reclaim RAM under memory pressure — off by default, weakens antivirus protection)",
+                );
+                ui.label(
+                    egui::RichText::new(
+                        "Only acts when RAM is under pressure AND Defender confirms no active threats. \
+                         Requires the background task to run elevated — see the Schedule tab.",
+                    )
+                    .weak()
+                    .small(),
+                );
                 ui.label(egui::RichText::new("Ignore names (one per line)").weak().small());
                 ui.add(egui::TextEdit::multiline(&mut self.form.ignore_names).desired_rows(4).desired_width(f32::INFINITY));
             });
@@ -1475,15 +1489,107 @@ impl RamOptimizerApp {
                 self.start_sched(ctx, false, None, "Stopping schedule…");
             }
         });
-        ui.add_space(8.0);
-        ui.label(
-            egui::RichText::new(
-                "Tip: on Windows this uses Task Scheduler (no admin needed for a per-user task). \
-                 For a fully hidden/elevated install, run scripts/install-windows.ps1 once.",
-            )
-            .weak()
-            .small(),
-        );
+        ui.add_space(12.0);
+        ui.group(|ui| {
+            ui.label(egui::RichText::new("ELEVATED INSTALL (OPTIONAL)").strong().small());
+            ui.label(
+                egui::RichText::new(
+                    "By default the background task runs as your regular user — no admin needed. \
+                     Some features (e.g. pausing Windows Defender) require the task to run elevated. \
+                     Run the command below once in PowerShell to re-register it with highest privileges:",
+                )
+                .weak()
+                .small(),
+            );
+            ui.add_space(4.0);
+
+            // Walk up from the running exe until we find the project root
+            // (a directory containing both scripts/ and Cargo.toml).
+            let project_root: std::path::PathBuf = {
+                let mut dir = std::env::current_exe()
+                    .ok()
+                    .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+                    .unwrap_or_else(|| std::path::PathBuf::from("."));
+                loop {
+                    if dir.join("Cargo.toml").exists() && dir.join("scripts").exists() {
+                        break dir;
+                    }
+                    match dir.parent() {
+                        Some(p) => dir = p.to_path_buf(),
+                        None => break std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                    }
+                }
+            };
+
+            let release_exe = project_root.join("target").join("release").join("ram-optimizer.exe");
+            let release_exists = release_exe.exists();
+            let scripts_ps1 = project_root.join("scripts").join("install-windows.ps1");
+            let install_cmd = format!(
+                "powershell -ExecutionPolicy Bypass -File \"{}\" -Elevated",
+                scripts_ps1.display()
+            );
+            // If the release binary isn't built yet, prepend cargo build --release.
+            let full_cmd = if release_exists {
+                install_cmd.clone()
+            } else {
+                format!("cargo build --release; {install_cmd}")
+            };
+
+            if !release_exists {
+                ui.label(
+                    egui::RichText::new(
+                        "Release binary not found — the command below will build it first (takes ~1–2 min).",
+                    )
+                    .color(egui::Color32::from_rgb(210, 153, 34))
+                    .small(),
+                );
+            }
+
+            // Monospace code display.
+            ui.add(
+                egui::TextEdit::singleline(&mut full_cmd.clone())
+                    .code_editor()
+                    .desired_width(f32::INFINITY)
+                    .interactive(false),
+            );
+
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                if ui.button("📋 Copy command").clicked() {
+                    ui.output_mut(|o| o.copied_text = full_cmd.clone());
+                }
+
+                #[cfg(windows)]
+                if ui.button("⬛ Open PowerShell here").clicked() {
+                    let root = project_root.clone();
+                    let cmd_for_ps = full_cmd.clone();
+                    let _ = std::process::Command::new("powershell")
+                        .args([
+                            "-NoExit",
+                            "-Command",
+                            &format!(
+                                "Set-Location \"{}\"; \
+                                 Set-Clipboard -Value '{}'; \
+                                 Write-Host 'Paste the command (Ctrl+V) and press Enter to run.' \
+                                 -ForegroundColor Cyan; \
+                                 Write-Host '  {}' -ForegroundColor Yellow",
+                                root.display(),
+                                cmd_for_ps,
+                                cmd_for_ps,
+                            ),
+                        ])
+                        .spawn();
+                }
+
+                ui.label(
+                    egui::RichText::new(
+                        "Opens a terminal at the project root — command is pre-copied, just paste and run.",
+                    )
+                    .weak()
+                    .small(),
+                );
+            });
+        });
     }
 
     fn ai_window(&mut self, ctx: &egui::Context) {
