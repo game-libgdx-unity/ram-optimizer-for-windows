@@ -219,6 +219,33 @@ pub struct Optimize {
     /// a momentary spike is ignored. `1` (or `0`) = act on the first critical pass
     /// (the old behavior). Does not affect the reap tier. See `optimize::run`.
     pub auto_act_confirm_passes: usize,
+
+    // ── CPU auto-kill (independent of RAM pressure) ──────────────────────
+
+    /// Master switch: auto-kill processes whose CPU usage exceeds per-group
+    /// thresholds for enough consecutive passes. Runs every pass, independent
+    /// of RAM pressure. When off (the default), CPU-sustained findings still
+    /// appear on the dashboard but are never auto-killed. See
+    /// `optimize::cpu_auto_kill`.
+    pub auto_kill_cpu: bool,
+    /// For `node.exe`: sustained CPU% — if a Node.js process stays at/above
+    /// this for `cpuSustainedConfirmPasses` consecutive passes (default 2,
+    /// ≈ 10 min at a 5-min interval), it is killed. Default 10.0.
+    pub cpu_kill_node_sustained_pct: f64,
+    /// For `node.exe`: hot CPU% — if a Node.js process reaches or exceeds
+    /// this on a single pass, it is killed immediately. Default 20.0.
+    pub cpu_kill_node_hot_pct: f64,
+    /// For all other (non-node) processes: sustained CPU% threshold.
+    /// Default 20.0 — double the Node.js sustained threshold (more mercy).
+    pub cpu_kill_other_sustained_pct: f64,
+    /// For all other processes: hot CPU% threshold (single-pass kill).
+    /// Default 40.0 — double the Node.js hot threshold.
+    pub cpu_kill_other_hot_pct: f64,
+    /// How many consecutive passes a process must stay at/above its sustained
+    /// CPU% before the auto-kill fires. `2` (default) at a 5-min schedule
+    /// interval means ≈ 10 minutes of sustained high CPU before the kill.
+    /// `1` (or `0`) acts on the first pass. Clamped to ≥ 1 internally.
+    pub cpu_sustained_confirm_passes: usize,
     /// Non-aggressive tier: at/above this system-RAM%, auto-reap duplicate / orphan
     /// / spam process pileups (newest spared). `0` disables (default). Meant to sit
     /// *below* `autoActSystemRamPct`.
@@ -300,6 +327,12 @@ impl Default for Optimize {
             auto_act_system_ram_pct: 0.0,
             auto_act_max_kills: 1,
             auto_act_confirm_passes: 2,
+            auto_kill_cpu: false,
+            cpu_kill_node_sustained_pct: 10.0,
+            cpu_kill_node_hot_pct: 20.0,
+            cpu_kill_other_sustained_pct: 20.0,
+            cpu_kill_other_hot_pct: 40.0,
+            cpu_sustained_confirm_passes: 2,
             auto_reap_system_ram_pct: 0.0,
             auto_reap_count: 10,
             auto_reap_count_aggressive: 5,
