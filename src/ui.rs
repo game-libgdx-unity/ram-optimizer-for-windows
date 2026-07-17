@@ -102,6 +102,9 @@ pub struct RamOptimizerApp {
     /// `update`. Tray clicks are handled off the UI loop because eframe stops
     /// calling `update` while the window is hidden in the tray.
     run_now: Arc<AtomicBool>,
+    /// Set by the background tray thread when the pause toggle is clicked;
+    /// consumed in `update` to flip the pause state and update the tray label.
+    pause_requested: Arc<AtomicBool>,
     /// Whether the background tray-event thread has been spawned.
     tray_thread: bool,
 
@@ -294,6 +297,7 @@ impl RamOptimizerApp {
             start_hidden,
             hide_until: None,
             run_now: Arc::new(AtomicBool::new(false)),
+            pause_requested: Arc::new(AtomicBool::new(false)),
             tray_thread: false,
             form: Form::default(),
             show_ai: false,
@@ -617,6 +621,7 @@ impl RamOptimizerApp {
         let ids: tray::TrayIds = tray.ids();
         let ctx = ctx.clone();
         let run_now = self.run_now.clone();
+        let pause_requested = self.pause_requested.clone();
         let show = |ctx: &egui::Context| {
             show_own_windows();
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
@@ -636,6 +641,9 @@ impl RamOptimizerApp {
                     TrayAction::RunNow => {
                         show(&ctx);
                         run_now.store(true, Ordering::Relaxed);
+                    }
+                    TrayAction::TogglePause => {
+                        pause_requested.store(true, Ordering::Relaxed);
                     }
                     // The OS-scheduled monitor is independent of this process, so a
                     // hard exit here is fine and reliably quits even while hidden.
@@ -696,6 +704,15 @@ impl eframe::App for RamOptimizerApp {
                 },
                 "Running optimization…",
             );
+        }
+
+        // Toggle pause/resume requested from the tray thread.
+        if self.pause_requested.swap(false, Ordering::Relaxed) {
+            let paused = !crate::state::auto_kill_paused();
+            crate::state::set_auto_kill_paused(paused);
+            if let Some(tray) = &self.tray {
+                tray.set_pause_text(paused);
+            }
         }
 
         // Close-to-tray: the window X hides the app instead of exiting, so the
@@ -778,6 +795,16 @@ impl RamOptimizerApp {
                 );
                 let (mon_txt, mon_col) = monitor_badge(&self.sched);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // Pause status: show if auto-kill is paused.
+                    if crate::state::auto_kill_paused() {
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new("auto-kill paused ⏸")
+                                    .color(egui::Color32::from_rgb(210, 153, 34))
+                                    .small(),
+                            ),
+                        );
+                    }
                     // Always-visible background-monitor status; click → Schedule tab.
                     let badge = ui
                         .add(
