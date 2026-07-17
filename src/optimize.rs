@@ -3,10 +3,12 @@
 //! Every action is logged to ~/.ram-optimizer/ram-optimizer.log and returned for a toast.
 use crate::collect::{Proc, Snapshot};
 use crate::config::{state_dir, Config};
+use crate::critical::is_critical_system_process;
 use crate::rules;
+use crate::state::Meta;
 use crate::util::{hidden_command, now_epoch};
 use crate::windefend::{self, ThreatStatus};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use sysinfo::{Pid, System};
 
 #[derive(Default)]
@@ -64,6 +66,14 @@ pub fn run(snap: &Snapshot, cfg: &Config, meta: &mut crate::state::Meta) -> OptR
         return OptResult::default();
     }
 
+    // Pause toggle from the tray icon — when paused the optimizer skips all
+    // kill/restart actions (rules, CPU auto-kill, reap, aggressive relief).
+    // Alert-only rules and detection findings are unaffected.
+    let paused = crate::state::auto_kill_paused();
+    if paused {
+        return OptResult::default();
+    }
+
     let mut actions = Vec::new();
     let mut reclaimed_mb = 0u64;
 
@@ -113,6 +123,15 @@ pub fn run(snap: &Snapshot, cfg: &Config, meta: &mut crate::state::Meta) -> OptR
             ));
         }
     }
+
+    // CPU auto-kill: sustained/high CPU, independent of RAM pressure. Tracks
+    // consecutive passes per PID for hysteresis — node.exe must stay at ≥10%
+    // for ~10 min, or hit ≥20% in one pass, before it is killed. Other apps
+    // get double the threshold (more mercy). Skips ignored / critical /
+    // antimalware / Claude-protected processes.
+    let (cpu_actions, cpu_mb) = cpu_auto_kill(snap, cfg, meta);
+    reclaimed_mb += cpu_mb;
+    actions.extend(cpu_actions);
 
     // Non-aggressive tier: at the lower threshold, reap duplicate / orphan / spam
     // pileups automatically (newest spared) — the safe, targeted reclamation.
@@ -434,6 +453,115 @@ fn run_blocklist(snap: &Snapshot, cfg: &Config) -> (Vec<String>, u64) {
         vec![format!("blocked: killed {n} proc(s) (~{mb}MB): {list}")],
         mb,
     )
+}
+
+/// Auto-kill processes with sustained or high CPU usage, completely independent
+/// of the RAM-based aggressive and reap tiers. Tracks per-PID consecutive
+/// passes in state (`cpu_sustained_streaks`) for hysteresis — so e.g. node.exe
+/// must stay at ≥10% CPU for `cpuSustainedConfirmPasses` consecutive passes
+/// (default 2, ≈ 10 min at 5-min interval) before it is killed, while a single
+/// pass at ≥20% CPU kills immediately. Other processes get double the thresholds
+/// (20% sustained, 40% hot) the user configured — more mercy for non-Node apps.
+///
+/// Skips ignore-listed, critical, antimalware, Claude-protected, and RAM
+/// Optimizer itself. Kills at most `autoActMaxKills` per pass (same cap as the
+/// aggressive RAM tier). Always logs every kill.
+fn cpu_auto_kill(snap: &Snapshot, cfg: &Config, meta: &mut Meta) -> (Vec<String>, u64) {
+    if !cfg.optimize.auto_kill_cpu {
+        return (vec![], 0);
+    }
+
+    let confirm = cfg.optimize.cpu_sustained_confirm_passes.max(1) as u32;
+    let ignore: HashSet<String> = cfg
+        .thresholds
+        .ignore_names
+        .iter()
+        .map(|s| s.to_lowercase())
+        .collect();
+    let protect = crate::guard::protected_pids(snap, cfg);
+    let self_pid = std::process::id();
+
+    let mut new_streaks: HashMap<String, u32> = HashMap::new();
+    let mut to_kill: Vec<&Proc> = Vec::new();
+
+    for p in &snap.procs {
+        let lname = p.name.to_lowercase();
+        if p.pid == 0
+            || p.pid == self_pid
+            || ignore.contains(&lname)
+            || is_critical_system_process(&p.name)
+            || windefend::is_antimalware(&p.name)
+            || protect.contains(&p.pid)
+        {
+            continue;
+        }
+
+        let is_node = lname == "node.exe";
+        let (sustained_pct, hot_pct) = if is_node {
+            (
+                cfg.optimize.cpu_kill_node_sustained_pct,
+                cfg.optimize.cpu_kill_node_hot_pct,
+            )
+        } else {
+            (
+                cfg.optimize.cpu_kill_other_sustained_pct,
+                cfg.optimize.cpu_kill_other_hot_pct,
+            )
+        };
+
+        // Hot threshold: kill immediately on a single pass.
+        if p.cpu >= hot_pct {
+            to_kill.push(p);
+            continue;
+        }
+
+        // Sustained threshold: track consecutive passes.
+        if p.cpu >= sustained_pct {
+            let pid_key = p.pid.to_string();
+            let prev = meta
+                .cpu_sustained_streaks
+                .get(&pid_key)
+                .copied()
+                .unwrap_or(0);
+            let streak = prev + 1;
+            new_streaks.insert(pid_key, streak);
+            if streak >= confirm {
+                to_kill.push(p);
+            }
+        }
+    }
+
+    // Prune streaks: keep only live PIDs whose streak is still active.
+    let live: HashSet<String> = snap.procs.iter().map(|p| p.pid.to_string()).collect();
+    meta.cpu_sustained_streaks = new_streaks;
+    meta.cpu_sustained_streaks.retain(|pid, _| live.contains(pid));
+
+    if to_kill.is_empty() {
+        return (vec![], 0);
+    }
+
+    // Sort by CPU descending so the hottest process is picked first.
+    to_kill.sort_by(|a, b| b.cpu.partial_cmp(&a.cpu).unwrap_or(std::cmp::Ordering::Equal));
+
+    let max_kills = cfg.optimize.auto_act_max_kills.max(1);
+    let mut actions = Vec::new();
+    let mut reclaimed = 0u64;
+
+    for t in to_kill.iter().take(max_kills) {
+        if kill_verified(&[t]) == 1 {
+            reclaimed += t.mem_mb;
+            log(&format!(
+                "CPU kill: {} (pid {}, {:.0}% CPU, ~{}MB)",
+                t.name, t.pid, t.cpu, t.mem_mb
+            ));
+            actions.push(format!(
+                "CPU auto-kill: {} (pid {}, {:.0}% CPU, ~{}MB)",
+                t.name, t.pid, t.cpu, t.mem_mb
+            ));
+        }
+    }
+
+    (actions, reclaimed)
 }
 
 #[cfg(test)]
